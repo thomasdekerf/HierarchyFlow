@@ -34,6 +34,7 @@ lr: 0.0001
 max_iter: 300000
 print_freq: 500
 save_freq: 500
+eval_freq: 5000
 resume: False
 load_path: ''
 
