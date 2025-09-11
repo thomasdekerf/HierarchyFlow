@@ -74,6 +74,31 @@ bash scripts/GTA2CITY/eval.sh partition GPU_NUM {ckpt_path}
 CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 main.py --config configs/config.yaml --load_path {ckpt_path}
 ```
 
+### 2. Virtual Staining (HE ↔ IHC)
+
+Assuming your dataset is organised as:
+
+```
+/home/thomas/Desktop/DATA/MIST/HER2/HER2/TrainValAB/
+├── trainA  # H&E images
+├── trainB  # IHC images
+├── valA
+└── valB
+```
+
+Update `configs/VirtualStain/config.yaml` with the correct paths. The template
+assumes 256×256 images; adjust `height` and `width` if necessary.
+
+**Training**
+```Shell
+CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.launch --nproc_per_node=1 main.py --config configs/VirtualStain/config.yaml
+```
+
+**Test**
+```Shell
+CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.launch --nproc_per_node=1 main.py --config configs/VirtualStain/config.yaml --load_path {ckpt_path}
+```
+
 ## Todo
 
 1. [x] Release the Code.
