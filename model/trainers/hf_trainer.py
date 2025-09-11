@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from numpy.lib.histograms import histogram
+from numpy import histogram
 
 
 import torch

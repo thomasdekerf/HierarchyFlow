@@ -13,10 +13,13 @@ from model.trainers.hf_trainer import Trainer
 parser = argparse.ArgumentParser(description='PyTorch HierarchyFlow Training')
 parser.add_argument('--config', type=str, default='configs/config.yaml', help='config file')
 parser.add_argument('--eval_only', action='store_true', help='evaluation mode')
-parser.add_argument('--local_rank', type=int, default=-1, help='node rank for distributed training')
+# parser.add_argument('--local_rank', type=int, default=-1, help='node rank for distributed training')
 parser.add_argument('--seed', type=int, default=0, help='seed for initializing training')
 parser.add_argument('--load_path', type=str, help='path for ckpt')
-
+# accept both spellings; default None so we can fill from env
+parser.add_argument("--local_rank", type=int, default=None)
+parser.add_argument("--local-rank", dest="local_rank", type=int, default=1)
+parser.add_argument("--nprocs", type=int, default=None)  # optional
 def set_random_seed(seed):
     r"""Set random seeds for everything.
 
@@ -29,6 +32,12 @@ def set_random_seed(seed):
 
 def main():
     args = parser.parse_args()
+    # Fill from env if not provided (torchrun path)
+    if args.local_rank is None:
+        args.local_rank = int(os.environ.get("LOCAL_RANK", 0))
+
+    if args.nprocs is None:
+        args.nprocs = int(os.environ.get("WORLD_SIZE", 1))
     args.nprocs = torch.cuda.device_count()
     print(args.nprocs, args.local_rank)
     set_random_seed(args.seed)

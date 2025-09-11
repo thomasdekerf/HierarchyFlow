@@ -1,6 +1,6 @@
 # Configuration for virtual staining (HE -> IHC)
 output: ./output_dir/
-task_name: virtual_stain
+task_name: virtual_stain_paired_losschange
 
 dataset:
   train:
@@ -10,10 +10,10 @@ dataset:
     height: 256
     scale_l: 1.0
     scale_h: 1.0
-    transform: ['h_flip', 'random_resized_crop']
-    random_pair: True
-    return_name: False
-    batch_size: 1
+    transform: []
+    random_pair: False
+    return_name: True
+    batch_size: 10
   test:
     source_dir: '/home/thomas/Desktop/DATA/MIST/HER2/HER2/TrainValAB/valA'
     target_dir: '/home/thomas/Desktop/DATA/MIST/HER2/HER2/TrainValAB/valB'
@@ -42,8 +42,8 @@ network:
 
 loss:
   vgg_encoder: 'model/losses/vgg_model/vgg_normalised.pth'
-  k: 0.8
-  weight: 0.1
+  k: -1.0
+  weight: 0.8
 
 lr_scheduler:
   type: cosine
