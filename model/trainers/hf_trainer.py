@@ -13,6 +13,13 @@ from model.network.hf import HierarchyFlow
 from model.utils.dataset import get_dataset
 from model.utils.sampler import DistributedGivenIterationSampler, DistributedTestSampler
 from tensorboardX import SummaryWriter
+from torchmetrics import (
+    PeakSignalNoiseRatio,
+    StructuralSimilarityIndexMeasure,
+    CosineSimilarity,
+)
+from torchmetrics.image.fid import FrechetInceptionDistance
+from torchmetrics.image.kid import KernelInceptionDistance
 
 import logging
 from model.utils.log_helper import init_log
@@ -91,13 +98,19 @@ class Trainer():
         test_dataset = get_dataset(self.cfg.dataset.test)
         test_sampler = DistributedTestSampler(test_dataset, world_size=self.world_size, rank=self.rank)
         test_loader = DataLoader(
-            test_dataset, 
-            batch_size=self.cfg.dataset.test.batch_size, 
-            shuffle=False, 
-            num_workers=4, 
-            pin_memory=False, 
+            test_dataset,
+            batch_size=self.cfg.dataset.test.batch_size,
+            shuffle=False,
+            num_workers=4,
+            pin_memory=False,
             sampler=test_sampler)
         self.model.eval()
+        if self.rank == 0:
+            psnr_metric = PeakSignalNoiseRatio(data_range=1.0).cuda(self.rank)
+            ssim_metric = StructuralSimilarityIndexMeasure(data_range=1.0).cuda(self.rank)
+            fid_metric = FrechetInceptionDistance().cuda(self.rank)
+            kid_metric = KernelInceptionDistance().cuda(self.rank)
+            mra_metric = CosineSimilarity(dim=1).cuda(self.rank)
         with torch.no_grad():
             for batch_id, batch in enumerate(test_loader):
                 content_images = batch[0].cuda(self.rank)
@@ -105,18 +118,42 @@ class Trainer():
                 names = batch[2]
                 outputs = self.model(content_images, style_images)
                 outputs = torch.clamp(outputs, 0, 1)
-                outputs = outputs.cpu()
 
-                for idx in range(len(outputs)):
+                if self.rank == 0:
+                    psnr_metric.update(outputs, style_images)
+                    ssim_metric.update(outputs, style_images)
+                    fid_metric.update(style_images, real=True)
+                    fid_metric.update(outputs, real=False)
+                    kid_metric.update(style_images, real=True)
+                    kid_metric.update(outputs, real=False)
+                    mra_metric.update(outputs.view(outputs.size(0), -1), style_images.view(style_images.size(0), -1))
+
+                outputs_cpu = outputs.cpu()
+                for idx in range(len(outputs_cpu)):
                     output_name = os.path.join(self.cfg.output, self.cfg.task_name, 'eval_results', 'pred', names[idx])
-                    save_image(outputs[idx].unsqueeze(0), output_name)
+                    save_image(outputs_cpu[idx].unsqueeze(0), output_name)
                     if idx == 0:
                         output_name = os.path.join(self.cfg.output, self.cfg.task_name, 'eval_results', 'cat_img', names[idx])
-                        output_images = torch.stack((content_images[idx].cpu(), style_images[idx].cpu(), outputs[idx]), 0)
+                        output_images = torch.stack((content_images[idx].cpu(), style_images[idx].cpu(), outputs_cpu[idx]), 0)
                         save_image(output_images, output_name, nrow=1)
                 if self.rank == 0 and batch_id % 10 == 1:
                     global_logger.info('predicting {}th batch...'.format(batch_id))
         if self.rank == 0:
+            psnr_val = psnr_metric.compute().item()
+            ssim_val = ssim_metric.compute().item()
+            fid_val = fid_metric.compute().item()
+            kid_mean, _ = kid_metric.compute()
+            mra_val = mra_metric.compute().item()
+            self.logger.add_scalar("PSNR", psnr_val, 0)
+            self.logger.add_scalar("SSIM", ssim_val, 0)
+            self.logger.add_scalar("FID", fid_val, 0)
+            self.logger.add_scalar("KID", kid_mean.item(), 0)
+            self.logger.add_scalar("MRA", mra_val, 0)
+            global_logger.info(
+                'PSNR: {:.4f}, SSIM: {:.4f}, FID: {:.4f}, KID: {:.4f}, MRA: {:.4f}'.format(
+                    psnr_val, ssim_val, fid_val, kid_mean.item(), mra_val
+                )
+            )
             global_logger.info('Save predictions to {}\nDone.'.format(os.path.join(self.cfg.output, self.cfg.task_name, 'eval_results')))
 
     def train_iter(self, batch_id, batch):
