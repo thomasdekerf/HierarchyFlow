@@ -89,12 +89,18 @@ class Trainer():
             pin_memory=False,
             sampler=train_sampler)
 
+        eval_freq = getattr(self.cfg, 'eval_freq', self.cfg.max_iter)
         for batch_id, batch in enumerate(train_loader):
             self.train_iter(batch_id, batch)
-        
-        self.eval()
 
-    def eval(self):
+            if (batch_id + 1) % eval_freq == 0:
+                self.eval(batch_id + 1)
+
+        # Final evaluation if last batch didn't trigger it
+        if (batch_id + 1) % eval_freq != 0:
+            self.eval(batch_id + 1)
+
+    def eval(self, step=None):
         test_dataset = get_dataset(self.cfg.dataset.test)
         test_sampler = DistributedTestSampler(test_dataset, world_size=self.world_size, rank=self.rank)
         test_loader = DataLoader(
@@ -144,17 +150,20 @@ class Trainer():
             fid_val = fid_metric.compute().item()
             kid_mean, _ = kid_metric.compute()
             mra_val = mra_metric.compute().item()
-            self.logger.add_scalar("PSNR", psnr_val, 0)
-            self.logger.add_scalar("SSIM", ssim_val, 0)
-            self.logger.add_scalar("FID", fid_val, 0)
-            self.logger.add_scalar("KID", kid_mean.item(), 0)
-            self.logger.add_scalar("MRA", mra_val, 0)
+            log_step = step if step is not None else 0
+            self.logger.add_scalar("PSNR", psnr_val, log_step)
+            self.logger.add_scalar("SSIM", ssim_val, log_step)
+            self.logger.add_scalar("FID", fid_val, log_step)
+            self.logger.add_scalar("KID", kid_mean.item(), log_step)
+            self.logger.add_scalar("MRA", mra_val, log_step)
             global_logger.info(
                 'PSNR: {:.4f}, SSIM: {:.4f}, FID: {:.4f}, KID: {:.4f}, MRA: {:.4f}'.format(
                     psnr_val, ssim_val, fid_val, kid_mean.item(), mra_val
                 )
             )
             global_logger.info('Save predictions to {}\nDone.'.format(os.path.join(self.cfg.output, self.cfg.task_name, 'eval_results')))
+
+        self.model.train()
 
     def train_iter(self, batch_id, batch):
         content_images = batch[0].cuda(self.rank)
