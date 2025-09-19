@@ -6,6 +6,6 @@ opencv-python
 tensorboard
 tensorboard-data-server
 tensorboard-plugin-wit
-tensorboardX
 torchmetrics
+torchvision
 scipy
